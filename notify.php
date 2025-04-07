@@ -1,50 +1,59 @@
 <?php
 
-$ip = gethostbyname('api.telegram.org');
-if ($ip === 'api.telegram.org') {
-    die("Ошибка: DNS не разрешает адрес. Хостинг блокирует запросы к Telegram.");
-} else {
-    echo "IP Telegram API: " . $ip; // Если выведет IP — проблема не в DNS
-}
-
-
-// Лучше хранить токен и chat_id в отдельном файле (config.php)
 define("TOKEN", "5061768214:AAHfbQdYrl8mkEnY17ac7SZq_73EgDSpfAs");
 define("CHAT_ID", 312501439);
 define("METHOD_NAME", "sendMessage");
 
-// Отправка сообщения "YUP"
+$content = file_get_contents('php://input');
+$signedPayloadJSON = json_decode($content, true);
+
+$signedPayloadValue = $signedPayloadJSON['signedPayload'];
+$signedPayloadJWS_Payload = explode(".", $signedPayloadValue)[1];
+
+
+$notificationTypeJSON = json_decode(base64_decode($signedPayloadJWS_Payload), true);
+$notificationTypeDATA_JSON = $notificationTypeJSON['data'];
+
+$resNotificationType = $notificationTypeJSON['notificationType'];
+$resNotificationUUID = $notificationTypeJSON['notificationUUID'];
+$resEnvironment = $notificationTypeDATA_JSON['environment'];
+
+
+$signedTransactionInfoValue = $notificationTypeDATA_JSON['signedTransactionInfo'];
+$signedTransactionInfoJWS_Payload = explode(".", $signedTransactionInfoValue)[1];
+$signedTransactionInfoJSON = json_decode(base64_decode($signedTransactionInfoJWS_Payload), true);
+
+$resProductId = $signedTransactionInfoJSON['productId'];
+$date = $signedTransactionInfoJSON['purchaseDate'];
+$resPurchaseDate = date("H:i:s d-m-Y", substr($date, 0, 10));
+$date = $signedTransactionInfoJSON['expiresDate'];
+$resExpiresDate = date("H:i:s d-m-Y", substr($date, 0, 10));
+
+
+$dataStr = "productID: " . $resProductId . "\nnotificationType: " . $resNotificationType . "\npurchase: " . $resPurchaseDate . "\nexpires: " . $resExpiresDate . "\nenvironment: " . $resEnvironment . "\nUUID: " . $resNotificationUUID;
+
 $send_data = [
-    'chat_id' => CHAT_ID,
-    'text' => "YUP"
+    'text' => $dataStr
 ];
 
-$result = sendMessageTelegram(METHOD_NAME, $send_data);
-print_r($result); // Вывод результата (для дебага)
+$send_data['chat_id'] = CHAT_ID;
+$res = sendMessageTelegram(METHOD_NAME, $send_data);
 
-function sendMessageTelegram($method, $data, $headers = []) {
-    $url = 'https://api.telegram.org/bot' . TOKEN . '/' . $method;
-    $jsonData = json_encode($data);
-    
-    if ($jsonData === false) {
-        return ["error" => "JSON encode failed: " . json_last_error_msg()];
-    }
-
+function sendMessageTelegram($method, $data, $headers = [])
+{
     $curl = curl_init();
     curl_setopt_array($curl, [
-        CURLOPT_URL => $url,
-        CURLOPT_POST => true,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => array_merge(["Content-Type: application/json"], $headers),
-        CURLOPT_POSTFIELDS => $jsonData,
+        CURLOPT_POST => 1,
+        CURLOPT_HEADER => 0,
+        CURLOPT_RETURNTRANSFER => 1,
+        CURLOPT_URL => 'https://api.telegram.org/bot' . TOKEN . '/' . $method,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => array_merge(array("Content-Type: application/json"), $headers)
     ]);
-
+    print_r($curl);
     $result = curl_exec($curl);
-    if (curl_errno($curl)) {
-        return ["error" => "cURL error: " . curl_error($curl)];
-    }
     curl_close($curl);
-
-    return json_decode($result, true) ?: $result;
+    return (json_decode($result, 1) ? json_decode($result, 1) : $result);
 }
+
 ?>
